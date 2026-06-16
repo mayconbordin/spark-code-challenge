@@ -8,7 +8,7 @@ Airflow** with **JupyterLab** wired to the cluster.
 
 - **Report (answers to Q1–Q5):** [`report below`](#report--answers) and the executable
   [`notebooks/questions.ipynb`](notebooks/questions.ipynb).
-- **Infrastructure details:** [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md).
+- **Infrastructure details:** [`INFRASTRUCTURE.md`](INFRASTRUCTURE.md).
 - **Transformations are written with the PySpark DataFrame API** (no Spark SQL),
   per the brief.
 
@@ -107,7 +107,7 @@ Then open:
 - **JupyterLab** <http://localhost:8888> — run `notebooks/questions.ipynb`
 - **Spark master UI** <http://localhost:8080>, **worker UI** <http://localhost:8081>
 
-See [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) for the service topology,
+See [`INFRASTRUCTURE.md`](INFRASTRUCTURE.md) for the service topology,
 the shared Iceberg warehouse volume, ports, and versions.
 
 ---

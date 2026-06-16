@@ -128,7 +128,12 @@ services:
       - billups
 
   # -------------------------------------------------------------------------
-  # Airflow (standalone, single container, default SQLite) — orchestrates the DAG
+  # Airflow (single container, SQLite + SequentialExecutor) — orchestrates the DAG
+  #
+  # We do NOT use `airflow standalone`: it generates a RANDOM admin password
+  # (written to standalone_admin_password.txt) and ignores _AIRFLOW_WWW_USER_*,
+  # so there is no stable login. Instead we migrate the DB, create a fixed
+  # admin/admin user, then run the scheduler + webserver. Login: admin / admin.
   # -------------------------------------------------------------------------
   airflow:
     build:
@@ -146,11 +151,10 @@ services:
       SPARK_MASTER: spark://spark-master:7077
       # Make the mounted project package importable from BashOperator tasks.
       PYTHONPATH: /opt/billups/src
-      # Standalone mode quality-of-life.
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
-    # Airflow 8080 -> host 8090 to avoid clashing with the Spark master UI (8080).
+      # Stable session secret so logins survive restarts.
+      AIRFLOW__WEBSERVER__SECRET_KEY: billups-local-dev-secret
+    # Airflow webserver 8080 -> host 8090 (avoids clashing with Spark master UI on 8080).
     ports:
       - "8090:8080"  # Airflow webserver UI
     volumes:
@@ -159,7 +163,19 @@ services:
       - ./data:/opt/billups/data:ro
       - ./src:/opt/billups/src:ro
       - ./conf:/opt/billups/conf:ro
-    command: ["airflow", "standalone"]
+    # Migrate the DB, ensure a deterministic admin/admin user, then run scheduler + webserver.
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        airflow db migrate
+        airflow users create \
+          --username admin --password admin \
+          --firstname Admin --lastname User \
+          --role Admin --email admin@example.com || true
+        airflow scheduler &
+        exec airflow webserver
     networks:
       - billups
 
