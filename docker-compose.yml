@@ -1,0 +1,174 @@
+# Docker Compose infrastructure for the billups PySpark medallion pipeline.
+#
+# Stack:
+#   - spark-master / spark-worker : a small standalone Spark 3.5.6 cluster
+#   - jupyter                     : JupyterLab driver for interactive work
+#   - airflow                     : orchestrates the bronze->silver->gold DAG
+#
+# Iceberg uses a HADOOP catalog: the warehouse is just a directory shared across
+# every container via the named "warehouse" volume mounted at the SAME path
+# (/opt/billups/warehouse). Keeping that path identical everywhere is what makes
+# the shared catalog work.
+#
+# Validate (do NOT need to build/up): `docker compose config -q`.
+
+# ---------------------------------------------------------------------------
+# Reusable anchors
+# ---------------------------------------------------------------------------
+
+# Common env for every Spark-capable service (master, worker, jupyter).
+x-spark-env: &spark-env
+  BILLUPS_DATA_DIR: /opt/billups/data
+  BILLUPS_WAREHOUSE: /opt/billups/warehouse
+  BILLUPS_ICEBERG_PACKAGES: org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.1
+  PYTHONPATH: /opt/billups/src
+  # Point Spark at our conf dir so spark-defaults.conf is picked up.
+  SPARK_CONF_DIR: /opt/billups/conf
+
+# Mounts shared by Spark-capable services. The warehouse is a named volume;
+# the rest are host bind mounts. Data is read-only (the pipeline only reads it).
+x-spark-volumes: &spark-volumes
+  - warehouse:/opt/billups/warehouse
+  - ./data:/opt/billups/data:ro
+  - ./src:/opt/billups/src:ro
+  - ./conf:/opt/billups/conf:ro
+
+services:
+  # -------------------------------------------------------------------------
+  # Spark standalone master
+  # -------------------------------------------------------------------------
+  spark-master:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    image: billups-spark:3.5.6
+    container_name: billups-spark-master
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+    environment:
+      <<: *spark-env
+      SPARK_MASTER: spark://spark-master:7077
+    ports:
+      - "7077:7077"  # Spark master RPC (driver/worker registration)
+      - "8080:8080"  # Spark master web UI
+    volumes: *spark-volumes
+    networks:
+      - billups
+    healthcheck:
+      # The master web UI answers once the master is up.
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # Spark standalone worker (~2 cores / 2G)
+  # -------------------------------------------------------------------------
+  spark-worker:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    image: billups-spark:3.5.6
+    container_name: billups-spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+    environment:
+      <<: *spark-env
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 2G
+    ports:
+      - "8081:8081"  # Spark worker web UI
+    volumes: *spark-volumes
+    networks:
+      - billups
+
+  # -------------------------------------------------------------------------
+  # JupyterLab (Spark driver) — built FROM apache/spark:3.5.6
+  # -------------------------------------------------------------------------
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/jupyter/Dockerfile
+    container_name: billups-jupyter
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      <<: *spark-env
+      SPARK_MASTER: spark://spark-master:7077
+    command:
+      - jupyter
+      - lab
+      - --ip=0.0.0.0
+      - --port=8888
+      - --no-browser
+      - --allow-root
+      - --NotebookApp.token=
+      - --NotebookApp.password=
+      - --notebook-dir=/opt/billups/notebooks
+    ports:
+      - "8888:8888"  # JupyterLab UI (no token — local dev only)
+    volumes:
+      - warehouse:/opt/billups/warehouse
+      - ./data:/opt/billups/data:ro
+      - ./src:/opt/billups/src:ro
+      - ./conf:/opt/billups/conf:ro
+      - ./notebooks:/opt/billups/notebooks
+    networks:
+      - billups
+
+  # -------------------------------------------------------------------------
+  # Airflow (standalone, single container, default SQLite) — orchestrates the DAG
+  # -------------------------------------------------------------------------
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    container_name: billups-airflow
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      # Pipeline env (DAG tasks also re-set these inline for clarity).
+      BILLUPS_DATA_DIR: /opt/billups/data
+      BILLUPS_WAREHOUSE: /opt/billups/warehouse
+      BILLUPS_ICEBERG_PACKAGES: org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.1
+      SPARK_MASTER: spark://spark-master:7077
+      # Make the mounted project package importable from BashOperator tasks.
+      PYTHONPATH: /opt/billups/src
+      # Standalone mode quality-of-life.
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+    # Airflow 8080 -> host 8090 to avoid clashing with the Spark master UI (8080).
+    ports:
+      - "8090:8080"  # Airflow webserver UI
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - warehouse:/opt/billups/warehouse
+      - ./data:/opt/billups/data:ro
+      - ./src:/opt/billups/src:ro
+      - ./conf:/opt/billups/conf:ro
+    command: ["airflow", "standalone"]
+    networks:
+      - billups
+
+# ---------------------------------------------------------------------------
+# Shared Iceberg warehouse volume + single network
+# ---------------------------------------------------------------------------
+volumes:
+  warehouse:
+
+networks:
+  billups:
+    driver: bridge

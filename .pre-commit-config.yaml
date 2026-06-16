@@ -1,0 +1,40 @@
+# Pre-commit hooks for the billups pipeline.
+#   * file hygiene (whitespace, EOF, large files, YAML/JSON/TOML validity)
+#   * ruff        — Python linting + import sorting (auto-fix)
+#   * ruff-format — Python formatting
+#   * pytest      — unit tests, run at PUSH time only (keeps commits fast)
+#
+# Install once:   pre-commit install --install-hooks
+#                 pre-commit install --hook-type pre-push
+# Run on demand:  pre-commit run --all-files   (also what CI runs)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^notebooks/  # notebooks are JSON but validated by check-ast/nbconvert
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (unit tests)
+        entry: python -m pytest -q
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-push]  # run on push, not on every commit

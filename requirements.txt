@@ -1,0 +1,4 @@
+pyspark==3.5.6
+pytest>=7.4
+jupyterlab>=4.0
+pandas>=2.0

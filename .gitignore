@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Spark / Iceberg local artifacts
+warehouse/
+spark-warehouse/
+metastore_db/
+derby.log
+notebooks/.ipynb_checkpoints/
+notebooks/executed_*.ipynb
+
+# OS
+.DS_Store
+
+# Provided datasets — large (the parquet exceeds GitHub's 100MB limit).
+# Not committed; place the supplied files here to run the pipeline.
+/data/historical_transactions/
+/data/merchants-subset.csv
+
+docs/
+

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "billups-pipeline"
+version = "1.0.0"
+description = "Billups medallion-architecture PySpark pipeline over Apache Iceberg"
+requires-python = ">=3.9"
+dependencies = [
+    "pyspark==3.5.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "ruff>=0.6",
+    "pre-commit>=3.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pyupgrade, flake8-bugbear, comprehensions.
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests build wide DataFrame rows; long lines there are acceptable.
+"tests/*" = ["E501"]
+"scripts/*" = ["E501"]
