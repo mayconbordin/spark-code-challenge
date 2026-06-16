@@ -49,6 +49,7 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,  # manual trigger only
     catchup=False,
+    is_paused_upon_creation=False,  # so `make trigger` runs without a manual unpause
     tags=["billups", "medallion", "spark", "iceberg"],
 ) as dag:
     bronze = BashOperator(
